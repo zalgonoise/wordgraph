@@ -2,7 +2,7 @@ package graph
 
 import (
 	"errors"
-	"fmt"
+	"time"
 )
 
 var (
@@ -10,6 +10,12 @@ var (
 	ErrNoMatches   error = errors.New("no matches found")
 	ErrNoRoute     error = errors.New("no route to target")
 	ErrSameWord    error = errors.New("origin and target words can't be the same")
+)
+
+const (
+	maxQueryTime = time.Second * 20
+	maxRoutes    = 5
+	minAccuracy  = 98
 )
 
 func (n *Node) Find(w string) bool {
@@ -97,8 +103,6 @@ func (n *Node) FindRoute(origin, target string) ([]string, error) {
 
 	r, err := n.TargetSiblings(origin, target)
 
-	fmt.Println(r, "\n\n")
-
 	if err != nil {
 		return nil, err
 	}
@@ -109,58 +113,70 @@ func (n *Node) FindRoute(origin, target string) ([]string, error) {
 func (n *Node) burstRouter(origin, target string, siblings []*Result) []string {
 	done := make(chan struct{})
 	res := make(chan []string)
-
-	out := [][]string{}
+	out := make(chan []string)
 
 	for _, s := range siblings {
-		fmt.Println(s.w)
 
-		carry := []string{s.w}
+		carry := []string{origin, s.w}
 
-		if s.weight == 100 {
-			fmt.Println("done\n\n")
+		if s.weight >= minAccuracy {
 
 			done <- struct{}{}
 			return carry
 		}
 
 		go n.findRoute(s.w, target, carry, done, res)
+
+		go n.findBestRoute(res, done, out)
 	}
 
 	for {
 		select {
-
-		case route := <-res:
-			fmt.Println("\n--\nroute:", route)
-
-			if len(out) < 50 {
-				fmt.Println("appended; list: ", out)
-				out = append(out, route)
-			} else {
-				return n.findBestRoute(out)
-			}
+		case result := <-out:
+			return result
 		}
 	}
 }
 
-func (n *Node) findBestRoute(routes [][]string) []string {
+func (n *Node) findBestRoute(rCh chan []string, done chan struct{}, out chan []string) {
 	size := map[int]int{}
+	routes := [][]string{}
 	var smallest int
 
-	for idx, r := range routes {
-		if idx == 0 {
-			smallest = idx
-			size[idx] = len(r)
-			continue
+	go func() {
+		time.Sleep(maxQueryTime)
+		done <- struct{}{}
+		if len(routes) == 0 {
+			out <- []string{}
+			return
 		}
+		out <- routes[smallest]
+		return
+	}()
 
-		if len(r) > 0 && len(r) < size[smallest] {
-			smallest = idx
-			size[idx] = len(r)
+	for {
+		select {
+		case route := <-rCh:
+			if len(routes) > maxRoutes {
+				done <- struct{}{}
+				out <- routes[smallest]
+				return
+			}
+
+			if len(size) == 0 {
+				smallest = 0
+				size[0] = len(route)
+				routes = append(routes, route)
+			}
+
+			if len(route) > 0 && len(route) < size[smallest] {
+				smallest++
+				size[smallest] = len(route)
+				routes = append(routes, route)
+			}
+
 		}
 	}
-
-	return routes[smallest]
 }
 
 func (n *Node) findRoute(
@@ -181,7 +197,7 @@ func (n *Node) findRoute(
 
 	}()
 
-	if len(carry) >= len(origin)*4 {
+	if len(carry) >= len(origin)*3 {
 		return
 	}
 
@@ -196,9 +212,21 @@ func (n *Node) findRoute(
 		case <-innerDone:
 			return
 		default:
+			var exists bool
+
+			for _, carryObj := range carry {
+				if sibling.w == carryObj {
+					exists = true
+					break
+				}
+			}
+			if exists {
+				continue
+			}
+
 			carry = append(carry, sibling.w)
 
-			if sibling.weight == 100 {
+			if sibling.weight >= minAccuracy {
 				res <- carry
 				return
 			}
@@ -331,7 +359,3 @@ func (n *Node) WeighedFuzz(o, t string) ([]*Result, error) {
 
 	return out, nil
 }
-
-// func (n *Node) siblings(o string, s int) ([]string, error) {
-
-// }
