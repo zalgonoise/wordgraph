@@ -49,9 +49,11 @@ func (n *Node) burstRoutes(origin, target string, siblings []*Result) []string {
 			return carry
 		}
 
-		// kick off findRoute() and findBestRoute()
+		// kick off findRoute()
 		go n.findRoute(s.word, target, carry, done, res)
 	}
+
+	// kick off findBestRoute() only once
 	go n.findBestRoute(res, out, done)
 
 	// once all goroutines are kicked-off, wait for a results message from the output channel
