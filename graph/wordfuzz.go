@@ -12,15 +12,14 @@ func (n *Node) Fuzz(word string) ([]string, error) {
 
 	// for each character's nodes, run the fuzzer func
 	for idx, n := range nodes {
-		matches = append(matches, fuzz(word, idx, n)...)    // fuzz the word's contents
-		matches = append(matches, expanded(word, nodes)...) // explore if word can be expanded (+1 characters)
-		matches = append(matches, reduced(word, nodes)...)  // explore if word can be reduced (-1 characters)
-		matches = trimDuplicates(matches)                   // trim duplicates
-
+		matches = append(matches, fuzz(word, idx, n)...) // fuzz the word's contents
 	}
+	matches = append(matches, expanded(word, nodes)...) // explore if word can be expanded (+1 characters)
+	matches = append(matches, reduced(word, nodes)...)  // explore if word can be reduced (-1 characters)
+	matches = trimDuplicates(matches)                   // trim duplicates
 
 	if len(matches) == 0 {
-		return nil, ErrNoMatches
+		return nil, ErrNoRoute
 	}
 
 	return matches, nil
@@ -39,11 +38,10 @@ func (n *Node) WeighedFuzz(word, target string) ([]*Result, error) {
 	// for each match, fetch the siblings, and use the target, match and siblings
 	// to create a new Result entry
 	for _, match := range m {
-		siblings, err := n.Siblings(match)
 
-		if err != nil {
-			continue
-		}
+		// error cannot be nil since the implied Find() call is done in Fuzz(), too
+		// thus, skipping it
+		siblings, _ := n.Siblings(match)
 
 		out = append(out, newResult(target, match, siblings))
 	}
@@ -92,11 +90,9 @@ func expanded(word string, nodes []*Node) []string {
 		if node.isEnd {
 			new := []byte(word)
 			new = append(new, node.char)
-
 			out = append(out, string(new))
 		}
 	}
-
 	return out
 }
 
@@ -108,11 +104,11 @@ func reduced(word string, nodes []*Node) []string {
 	var out []string
 
 	if len(nodes) >= 2 {
-		for _, node := range nodes[len(nodes)-2].charMap {
-			if node.isEnd {
-				new := []byte(word[:len(word)-1])
-				out = append(out, string(new))
-			}
+		nextToLast := nodes[len(nodes)-2]
+
+		if nextToLast.isEnd {
+			new := []byte(word[:len(word)-1])
+			out = append(out, string(new))
 		}
 	}
 
