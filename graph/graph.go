@@ -7,14 +7,14 @@ import (
 const allChars = "abcdefghijklmnopqrstuvwxyz"
 
 type Node struct {
-	c      map[byte]*Node
-	char   byte
-	isEnd  bool
-	parent *Node
+	charMap map[byte]*Node
+	char    byte
+	isEnd   bool
+	parent  *Node
 }
 
 func New() *Node {
-	return &Node{c: map[byte]*Node{}}
+	return &Node{charMap: map[byte]*Node{}}
 }
 
 func (n *Node) getRoot() *Node {
@@ -43,20 +43,20 @@ func (n *Node) insert(w string) {
 
 	b := w[0]
 
-	if n.c[b] == nil {
-		n.c[b] = &Node{
-			c:      map[byte]*Node{},
-			char:   b,
-			parent: n,
+	if n.charMap[b] == nil {
+		n.charMap[b] = &Node{
+			charMap: map[byte]*Node{},
+			char:    b,
+			parent:  n,
 		}
 		if len(w) == 1 {
-			n.c[b].isEnd = true
+			n.charMap[b].isEnd = true
 		}
 
-		n.c[b].insert(w[1:])
+		n.charMap[b].insert(w[1:])
 		return
 	}
-	n.c[b].insert(w[1:])
+	n.charMap[b].insert(w[1:])
 }
 
 func (n *Node) Byte() byte {
@@ -74,7 +74,7 @@ func (n *Node) String() string {
 func (n *Node) Print(sep, brk string) string {
 	var sb = &strings.Builder{}
 
-	for b, nd := range n.c {
+	for b, nd := range n.charMap {
 
 		sb.WriteString(sep)
 		sb.WriteString(brk)
