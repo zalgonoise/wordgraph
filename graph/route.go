@@ -1,6 +1,9 @@
 package graph
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // FindRoute method will take an origin and target words, and return the most efficient path from one word
 // to the other, with single-character changes.
@@ -44,14 +47,13 @@ func (n *Node) burstRoutes(origin, target string, siblings []*Result) []string {
 
 		// if there is a match already, send done signal to done channel and return results
 		if s.weight >= minAccuracy {
-			done <- struct{}{}
 			return carry
 		}
 
 		// kick off findRoute() and findBestRoute()
 		go n.findRoute(s.word, target, carry, done, res)
-		go n.findBestRoute(res, out, done)
 	}
+	go n.findBestRoute(res, out, done)
 
 	// once all goroutines are kicked-off, wait for a results message from the output channel
 	for {
@@ -60,6 +62,31 @@ func (n *Node) burstRoutes(origin, target string, siblings []*Result) []string {
 			return result
 		}
 	}
+}
+
+func getShortest(input [][]string) []string {
+	fmt.Println(input)
+	if len(input) == 0 {
+		return []string{}
+	}
+
+	var smallest int = 0
+	var smallIdx int = 0
+
+	for idx, v := range input {
+		if idx == 0 {
+			continue
+		}
+
+		if len(v) < smallest {
+			smallest = len(v)
+			smallIdx = idx
+		}
+
+		fmt.Println(smallest, smallIdx, input[smallIdx])
+	}
+	return input[smallIdx]
+
 }
 
 // findBestRoute method takes in a results and output channel (chan []string), and a done channel (chan struct{}),
@@ -73,51 +100,63 @@ func (n *Node) burstRoutes(origin, target string, siblings []*Result) []string {
 // Once the set maxRoutes value is achieved in its routes slice, it send the smallest to the output channel after sending
 // the done signal.
 func (n *Node) findBestRoute(rCh, out chan []string, done chan struct{}) {
-	size := map[int]int{}  // initialize a size reference map
+	// size := map[int]int{}  // initialize a size reference map, pointing routes index to their length
 	routes := [][]string{} // initialize a slice of slices to store the routes
-	var smallest int       // keep track of the index for the smallest slice
-
-	// kick off a goroutine to set a time limit for this operation
-	// sends done signal and returns the smallest route it has (if any)
-	go func() {
-		time.Sleep(maxQueryTime)
-		done <- struct{}{}
-		if len(routes) == 0 {
-			out <- []string{}
-			return
-		}
-		out <- routes[smallest]
-		return
-	}()
+	// var smallest int = 0   // keep track of the index for the smallest slice
+	// smallPtr := &smallest
+	var entries int // keep track of the number of received entries
 
 	for {
 		select {
+		// safeguard to exit after a period of time
+		case <-time.After(maxQueryTime):
+			out <- getShortest(routes)
+			return
+		case <-done:
+			out <- getShortest(routes)
+			return
 		case route := <-rCh:
+
+			entries++
+			go func(entries *int) {
+				copy := *entries
+				for {
+					select {
+					case <-time.After(maxNoResponseTime):
+						if *entries == copy {
+							done <- struct{}{}
+						}
+					}
+				}
+			}(&entries)
+
+			routes = append(routes, route)
 
 			// if length of routes exceeds the set maximum, exit by sending
 			// the done signal and pushing the smallest slice to the output channel
 			if len(routes) > maxRoutes {
 				done <- struct{}{}
-				out <- routes[smallest]
-				return
 			}
 
-			// if this is the first entry in routes, set smallest index to 0, add the route
-			// to the map and the slice of slices.
-			if len(size) == 0 {
-				smallest = 0
-				size[0] = len(route)
-				routes = append(routes, route)
-			}
+			// // if this is the first entry in routes, set smallest index to 0, add the route
+			// // to the map and the slice of slices.
+			// if len(size) == 0 {
+			// 	size[0] = len(route)
+			// 	routes = append(routes, route)
+			// 	fmt.Println("first: ", route, size, len(route), size[smallest], *smallPtr)
+			// }
+			// fmt.Println("next: ", route, size, len(route), size[smallest], *smallPtr)
 
-			// if there are more elements, and this route is smaller than the current smallest,
-			// increment the smallest index, add this route's length to the map, and append it
-			// to the slice of slices.
-			if len(route) > 0 && len(route) < size[smallest] {
-				smallest++
-				size[smallest] = len(route)
-				routes = append(routes, route)
-			}
+			// // if there are more elements, and this route is smaller than the current smallest,
+			// // increment the smallest index, add this route's length to the map, and append it
+			// // to the slice of slices.
+			// if len(route) > 0 && len(route) < size[*smallPtr] {
+			// 	*smallPtr = *smallPtr + 1
+			// 	size[*smallPtr] = len(route)
+			// 	routes = append(routes, route)
+			// }
+
+			// fmt.Println("after run:", routes, *smallPtr)
 
 		}
 	}
@@ -134,17 +173,14 @@ func (n *Node) findBestRoute(rCh, out chan []string, done chan struct{}) {
 func (n *Node) findRoute(
 	origin string, target string,
 	carry []string,
-	done <-chan struct{},
+	done chan struct{},
 	rCh chan []string,
 ) {
-	var innerDone = make(chan struct{}) // initialize a local done channel
-
 	// kick-off a goroutine as a controller, to close this call and its children when the
 	// done signal is called
 	go func() {
 		select {
 		case <-done:
-			innerDone <- struct{}{}
 			return
 		}
 	}()
@@ -164,39 +200,35 @@ func (n *Node) findRoute(
 
 	// cycle through each sibling
 	for _, sibling := range r {
-		select {
-		case <-innerDone: // check if should exit
-			return
-		default:
-			var exists bool
+		var exists bool
 
-			// check if the current sibling is already present as one of the items in the carry routes
-			for _, carryObj := range carry {
-				if sibling.word == carryObj {
-					exists = true
-					break
-				}
+		// check if the current sibling is already present as one of the items in the carry routes
+		for _, carryObj := range carry {
+			if sibling.word == carryObj {
+				exists = true
+				break
 			}
-
-			// skip it if so
-			if exists {
-				continue
-			}
-
-			// append this word to the routes list
-			carry = append(carry, sibling.word)
-
-			// check if its weight counts passes as a match, if so send this carry slice to
-			// the results channel, and return
-			if sibling.weight >= minAccuracy {
-				rCh <- carry
-				return
-			}
-
-			// otherwise, keep exploring the siblings in a new goroutine, with this sibling's word
-			// as the origin instead
-			go n.findRoute(sibling.word, target, carry, done, rCh)
 		}
+
+		// skip it if so
+		if exists {
+			continue
+		}
+
+		// append this word to the routes list
+		carry = append(carry, sibling.word)
+
+		// check if its weight counts passes as a match, if so send this carry slice to
+		// the results channel, and return
+		if sibling.weight >= minAccuracy {
+			rCh <- carry
+			return
+		}
+
+		// otherwise, keep exploring the siblings in a new goroutine, with this sibling's word
+		// as the origin instead
+		go n.findRoute(sibling.word, target, carry, done, rCh)
+
 	}
 
 }
