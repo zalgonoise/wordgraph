@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -65,7 +64,6 @@ func (n *Node) burstRoutes(origin, target string, siblings []*Result) []string {
 }
 
 func getShortest(input [][]string) []string {
-	fmt.Println(input)
 	if len(input) == 0 {
 		return []string{}
 	}
@@ -82,8 +80,6 @@ func getShortest(input [][]string) []string {
 			smallest = len(v)
 			smallIdx = idx
 		}
-
-		fmt.Println(smallest, smallIdx, input[smallIdx])
 	}
 	return input[smallIdx]
 
@@ -100,11 +96,8 @@ func getShortest(input [][]string) []string {
 // Once the set maxRoutes value is achieved in its routes slice, it send the smallest to the output channel after sending
 // the done signal.
 func (n *Node) findBestRoute(rCh, out chan []string, done chan struct{}) {
-	// size := map[int]int{}  // initialize a size reference map, pointing routes index to their length
 	routes := [][]string{} // initialize a slice of slices to store the routes
-	// var smallest int = 0   // keep track of the index for the smallest slice
-	// smallPtr := &smallest
-	var entries int // keep track of the number of received entries
+	var entries int        // keep track of the number of received entries
 
 	for {
 		select {
@@ -137,27 +130,6 @@ func (n *Node) findBestRoute(rCh, out chan []string, done chan struct{}) {
 			if len(routes) > maxRoutes {
 				done <- struct{}{}
 			}
-
-			// // if this is the first entry in routes, set smallest index to 0, add the route
-			// // to the map and the slice of slices.
-			// if len(size) == 0 {
-			// 	size[0] = len(route)
-			// 	routes = append(routes, route)
-			// 	fmt.Println("first: ", route, size, len(route), size[smallest], *smallPtr)
-			// }
-			// fmt.Println("next: ", route, size, len(route), size[smallest], *smallPtr)
-
-			// // if there are more elements, and this route is smaller than the current smallest,
-			// // increment the smallest index, add this route's length to the map, and append it
-			// // to the slice of slices.
-			// if len(route) > 0 && len(route) < size[*smallPtr] {
-			// 	*smallPtr = *smallPtr + 1
-			// 	size[*smallPtr] = len(route)
-			// 	routes = append(routes, route)
-			// }
-
-			// fmt.Println("after run:", routes, *smallPtr)
-
 		}
 	}
 }
