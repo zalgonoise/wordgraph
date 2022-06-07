@@ -25,7 +25,14 @@ func FromWordList(path string) ([]string, error) {
 	return fromBytes(b), nil
 }
 
+// FromOnlineSource function will get a list of strings (separated by newlines) from an
+// endpoint on the internet. If no page URL is provided, the default repo (dwyl/english-words)'s
+// word list is fetched.
 func FromOnlineSource(pageURL string) ([]string, error) {
+	if pageURL == "" {
+		return FromOnlineSource(dwylEnglishWordsRepo)
+	}
+
 	response, err := http.Get(pageURL)
 
 	if err != nil {
@@ -43,6 +50,8 @@ func FromOnlineSource(pageURL string) ([]string, error) {
 	return fromBytes(b), nil
 }
 
+// fromBytes function is a converter to materialize raw data (a slice of bytes)
+// into a list of strings (separated by newlines, or byte 10)
 func fromBytes(b []byte) []string {
 	var out []string
 	var word []byte
