@@ -14,7 +14,7 @@ var (
 
 const (
 	maxQueryTime      = time.Second * 15 // timer ceiling for a FindRoute() operation
-	maxNoResponseTime = time.Second * 5  // timer ceiling for cancelling when no new routes appear after a while
+	maxNoResponseTime = maxQueryTime / 5 // timer ceiling for cancelling when no new routes appear after a while
 	maxRoutes         = 5                // maximum number of accumulated routes before halting the query
 	minAccuracy       = 98               // minimum accuracy threshold to validate as a match
 )
