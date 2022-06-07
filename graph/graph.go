@@ -93,6 +93,7 @@ func (n *Node) rAdd(word string) {
 
 	// if it doesn't exist in the map; populate it with a new pointer
 	if n.charMap[char] == nil {
+
 		n.charMap[char] = &Node{
 			charMap: map[byte]*Node{},
 			char:    char,
@@ -102,6 +103,7 @@ func (n *Node) rAdd(word string) {
 		// if this is the last character, set node's isEnd as true
 		if len(word) == 1 {
 			n.charMap[char].isEnd = true
+			return
 		}
 
 		// continue until input is empty
