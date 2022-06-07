@@ -18,7 +18,7 @@ func main() {
 	}
 
 	n := graph.New()
-	n.Insert(w...)
+	n.Add(w...)
 
 	result, err := n.FindRoute(keyword, target)
 	if err != nil {
