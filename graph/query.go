@@ -6,356 +6,140 @@ import (
 )
 
 var (
-	ErrNonExistent error = errors.New("word does not exist")
-	ErrNoMatches   error = errors.New("no matches found")
-	ErrNoRoute     error = errors.New("no route to target")
-	ErrSameWord    error = errors.New("origin and target words can't be the same")
+	ErrNonExistent error = errors.New("word does not exist")                       // default error when a word does not exist in the dictionary
+	ErrNoMatches   error = errors.New("no matches found")                          // default error when no matches are found for the query
+	ErrNoRoute     error = errors.New("no route to target")                        // default error when no routes are found
+	ErrSameWord    error = errors.New("origin and target words can't be the same") // default error when providing the same origin / target words
 )
 
 const (
-	maxQueryTime = time.Second * 20
-	maxRoutes    = 5
-	minAccuracy  = 98
+	maxQueryTime = time.Second * 20 // timer ceiling for a FindRoute() operation
+	maxRoutes    = 5                // maximum number of accumulated routes before halting the query
+	minAccuracy  = 98               // minimum accuracy threshold to validate as a match
 )
 
-func (n *Node) Find(w string) bool {
+// Find method will look up the dictionary for string w, and return true if it exists
+//
+// It does so by getting to the root node, and iterating through each index recursively, with the
+// private `rFind()` method; which will recursively look up if each character is initialized in the pointer map.
+//
+// Once it reaches the last character, it expects the node to also mark the end of a word, returning a boolean
+// based on this match.
+func (n *Node) Find(word string) bool {
 	node := n.getRoot()
 
-	return node.find(w)
+	return node.rFind(word)
 }
 
-func (n *Node) find(w string) bool {
-	if len(w) == 0 {
+// find method is called recursively, to ensure the input word exists in the dictionary.
+//
+// The input word is recursively shortened on each call as the graph is traversed, until the word is
+// only one character long. Then, its `isEnd` element should be true.
+func (n *Node) rFind(word string) bool {
+
+	// input can't be empty
+	if len(word) == 0 {
 		return false
 	}
 
-	b := w[0]
+	// take the first character
+	char := word[0]
 
-	if n.c[b] == nil {
+	// if this pointer is not initialized, it's not a word in this dictionary
+	if n.charMap[char] == nil {
 		return false
 	}
 
-	if n.c[b].isEnd && len(w) == 1 {
+	// if the isEnd element for this character is true and this is the last one left,
+	// return true as there is a match
+	if n.charMap[char].isEnd && len(word) == 1 {
 		return true
 	}
 
-	return n.c[b].find(w[1:])
+	// otherwise, there are more than one characters in the word, continue recursively
+	return n.charMap[char].rFind(word[1:])
 }
 
-func (n *Node) GetNodes(w string) []*Node {
-	if !n.Find(w) {
+// GetNodes method will take in an input word and return a slice of pointers to Nodes, for
+// each character of that word.
+//
+// It does so by recursivelly calling the `rGetNodes()` method, to populate the output slice
+func (n *Node) GetNodes(word string) []*Node {
+	// short-circuit if the word does not exist or is empty
+	if len(word) == 0 || !n.Find(word) {
 		return []*Node{}
 	}
 
-	return n.getNodes(w)
+	return n.rGetNodes(word)
 }
 
-func (n *Node) getNodes(w string) []*Node {
+// rGetNodes method will traverse the graph recursively, and populating a slice of pointers to Nodes
+// as it grabs it from the node's charMap. Then, the output is appended a new call to this method,
+// taking off the first character in the word, continuously (until it's empty).
+func (n *Node) rGetNodes(word string) []*Node {
 	var out = []*Node{}
 
-	if len(w) == 0 {
+	// short-circuit if / when the word is / becomes zero-length
+	if len(word) == 0 {
 		return out
 	}
 
-	var b = w[0]
+	// take the first character in the word
+	var char = word[0]
 
-	out = append(out, n.c[b])
+	// store its Node pointer in the output slice
+	out = append(out, n.charMap[char])
 
-	out = append(out, n.c[b].getNodes(w[1:])...)
+	// recursively call this method to populate the slice with its child nodes.
+	out = append(out, n.charMap[char].rGetNodes(word[1:])...)
 
 	return out
 }
 
+// Siblings method will try to scramble the origin word's letters (one at a time), trying to find
+// a real word. This is done by creating a new word, then matching if it exists in the dictionary.
+//
+// This call will be by default applied to the root, as its `Fuzz()` call will work with the word's
+// corresponding nodes.
 func (n *Node) Siblings(origin string) ([]string, error) {
+	// work on the root for a complete word look-up
 	node := n.getRoot()
 
+	// return an error if the word does not exist
 	if !node.Find(origin) {
 		return nil, ErrNonExistent
 	}
 
+	// fuzz the words letters, checking if they are in fact words; returning a slice of all
+	// one-step combinations
 	return node.Fuzz(origin)
 }
 
+// TargetSiblings method will perform a call similar to `Siblings()`, but it will rank the results with
+// metrics which may help achieving a quicker, better route.
+//
+// This is done with a `WeighedFuzz()` call, which builds a profile on each result, giving it a weight
+// (a 0-100 score on the number of matched characters) and a potential (number of siblings it has).
+//
+// These results are sorted with a simple quicksort technique that orders by weight and by potential,
+// accordingly. This ensures that a `FindRoutes()` call will prioritize the most "efficient" words.
 func (n *Node) TargetSiblings(origin, target string) ([]*Result, error) {
+	// work on the root for a complete word look-up
 	node := n.getRoot()
 
+	// return an error if the word does not exist
 	if !node.Find(origin) {
 		return nil, ErrNonExistent
 	}
 
+	// fuzz the words letters, checking if they are in fact words; returning a slice of all
+	// one-step combinations; while building a profile on their relationship with the target word
 	weighed, err := node.WeighedFuzz(origin, target)
 
 	if err != nil {
 		return nil, err
 	}
 
+	// return a sorted list of results, from most relevant to the least.
 	return quickSort(weighed), nil
-}
-
-func (n *Node) FindRoute(origin, target string) ([]string, error) {
-	if origin == target {
-		return nil, ErrSameWord
-	}
-
-	if !n.Find(target) {
-		return nil, ErrNonExistent
-	}
-
-	r, err := n.TargetSiblings(origin, target)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return n.burstRouter(origin, target, r), nil
-}
-
-func (n *Node) burstRouter(origin, target string, siblings []*Result) []string {
-	done := make(chan struct{})
-	res := make(chan []string)
-	out := make(chan []string)
-
-	for _, s := range siblings {
-
-		carry := []string{origin, s.w}
-
-		if s.weight >= minAccuracy {
-
-			done <- struct{}{}
-			return carry
-		}
-
-		go n.findRoute(s.w, target, carry, done, res)
-
-		go n.findBestRoute(res, done, out)
-	}
-
-	for {
-		select {
-		case result := <-out:
-			return result
-		}
-	}
-}
-
-func (n *Node) findBestRoute(rCh chan []string, done chan struct{}, out chan []string) {
-	size := map[int]int{}
-	routes := [][]string{}
-	var smallest int
-
-	go func() {
-		time.Sleep(maxQueryTime)
-		done <- struct{}{}
-		if len(routes) == 0 {
-			out <- []string{}
-			return
-		}
-		out <- routes[smallest]
-		return
-	}()
-
-	for {
-		select {
-		case route := <-rCh:
-			if len(routes) > maxRoutes {
-				done <- struct{}{}
-				out <- routes[smallest]
-				return
-			}
-
-			if len(size) == 0 {
-				smallest = 0
-				size[0] = len(route)
-				routes = append(routes, route)
-			}
-
-			if len(route) > 0 && len(route) < size[smallest] {
-				smallest++
-				size[smallest] = len(route)
-				routes = append(routes, route)
-			}
-
-		}
-	}
-}
-
-func (n *Node) findRoute(
-	origin string, target string,
-	carry []string,
-	done <-chan struct{},
-	res chan []string,
-) {
-	var innerDone = make(chan struct{})
-
-	go func() {
-
-		select {
-		case <-done:
-			innerDone <- struct{}{}
-			return
-		}
-
-	}()
-
-	if len(carry) >= len(origin)*3 {
-		return
-	}
-
-	r, err := n.TargetSiblings(origin, target)
-
-	if err != nil {
-		return
-	}
-
-	for _, sibling := range r {
-		select {
-		case <-innerDone:
-			return
-		default:
-			var exists bool
-
-			for _, carryObj := range carry {
-				if sibling.w == carryObj {
-					exists = true
-					break
-				}
-			}
-			if exists {
-				continue
-			}
-
-			carry = append(carry, sibling.w)
-
-			if sibling.weight >= minAccuracy {
-				res <- carry
-				return
-			}
-
-			go n.findRoute(sibling.w, target, carry, done, res)
-		}
-	}
-
-}
-
-func fuzz(o string, idx int, n *Node) []string {
-	matches := []string{}
-
-	// get the parent
-	parent := n.parent
-
-	// scramble all keys
-	for k, v := range parent.c {
-
-		// ignore the same key for this run
-		if k == o[idx] {
-			continue
-		}
-
-		// change the character
-		new := []byte(o)
-		new[idx] = v.Byte()
-
-		// look it up
-		if n.getRoot().Find(string(new)) {
-			matches = append(matches, string(new))
-		}
-	}
-
-	return matches
-}
-
-func expanded(o string, n []*Node) []string {
-	var out []string
-
-	for _, node := range n[len(n)-1].c {
-		if node.isEnd {
-			new := []byte(o)
-			new = append(new, node.char)
-
-			out = append(out, string(new))
-		}
-	}
-
-	return out
-}
-
-func reduced(o string, n []*Node) []string {
-	var out []string
-
-	if len(n) > 2 {
-		for _, node := range n[len(n)-2].c {
-			if node.isEnd {
-				new := []byte(o[:len(o)-1])
-				out = append(out, string(new))
-			}
-		}
-	}
-
-	return out
-}
-
-func trimDuplicates(slice []string) []string {
-	keys := map[string]struct{}{}
-	out := []string{}
-
-	for _, word := range slice {
-		if _, ok := keys[word]; ok {
-			continue
-		}
-		keys[word] = struct{}{}
-
-		out = append(out, word)
-	}
-
-	return out
-}
-
-func (n *Node) Fuzz(o string) ([]string, error) {
-	matches := []string{}
-	nodes := n.getNodes(o)
-
-	for idx, n := range nodes {
-		matches = append(matches, fuzz(o, idx, n)...)
-		matches = append(matches, expanded(o, nodes)...)
-		matches = append(matches, reduced(o, nodes)...)
-		matches = trimDuplicates(matches)
-
-	}
-
-	if len(matches) == 0 {
-		return nil, ErrNoMatches
-	}
-
-	return matches, nil
-}
-
-func (n *Node) WeighedFuzz(o, t string) ([]*Result, error) {
-	matches := []string{}
-	nodes := n.getNodes(o)
-
-	for idx, n := range nodes {
-		matches = append(matches, fuzz(o, idx, n)...)
-		matches = append(matches, expanded(o, nodes)...)
-		matches = append(matches, reduced(o, nodes)...)
-		matches = trimDuplicates(matches)
-
-	}
-
-	if len(matches) == 0 {
-		return nil, ErrNoMatches
-	}
-
-	out := []*Result{}
-
-	for _, m := range matches {
-		siblings, err := n.Siblings(m)
-
-		if err != nil {
-			continue
-		}
-
-		out = append(out, newResult(t, m, siblings))
-	}
-
-	return out, nil
 }
