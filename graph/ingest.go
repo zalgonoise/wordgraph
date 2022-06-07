@@ -1,18 +1,49 @@
 package graph
 
-import "os"
+import (
+	"io/ioutil"
+	"net/http"
+	"os"
+)
 
 const delimiter byte = 10 // bytes for newline (\n)
+const dwylEnglishWordsRepo = `https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt`
 
 // FromWordList function will get a list of strings from the file retrieved from the path
 // provided. It separates words by newlines.
 func FromWordList(path string) ([]string, error) {
+	if path == "" {
+		return FromOnlineSource(dwylEnglishWordsRepo)
+	}
+
 	b, err := os.ReadFile(path)
+
+	if err != nil {
+		return FromOnlineSource(dwylEnglishWordsRepo)
+	}
+
+	return fromBytes(b), nil
+}
+
+func FromOnlineSource(pageURL string) ([]string, error) {
+	response, err := http.Get(pageURL)
 
 	if err != nil {
 		return nil, err
 	}
 
+	defer response.Body.Close()
+
+	b, err := ioutil.ReadAll(response.Body)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return fromBytes(b), nil
+}
+
+func fromBytes(b []byte) []string {
 	var out []string
 	var word []byte
 
@@ -29,5 +60,5 @@ func FromWordList(path string) ([]string, error) {
 		out = append(out, string(word))
 	}
 
-	return out, nil
+	return out
 }
